@@ -753,9 +753,9 @@ export default function Chat() {
 								</div>
 							) : (
 								<>
-									{(appTitle || chatId) && (
+									{(blueprint?.title || appTitle || chatId) && (
 								<div className="flex items-center justify-between mb-2">
-									<div className="text-lg font-semibold">{appTitle}</div>
+									<div className="text-lg font-semibold">{blueprint?.title || appTitle}</div>
 								</div>
 							)}
 									<UserMessage

@@ -13,6 +13,7 @@ import { ImageType, uploadImage } from 'worker/utils/images';
 import { IdGenerator } from '../../utils/idGenerator';
 import { generateNanoId } from '../../../utils/idGenerator';
 import { generateProjectName } from '../../utils/templateCustomizer';
+import { deriveShortTitle } from '../../utils/titleGenerator';
 import { PreviewType, TemplateDetails } from 'worker/services/sandbox/sandboxTypes';
 import {
 	buildSpacePreviewPath,
@@ -139,7 +140,7 @@ export class ThinkCodingBehavior
 			projectName,
 			query,
 			blueprint: {
-				title: baseName,
+				title: deriveShortTitle(baseName),
 				projectName,
 				description: query,
 				colorPalette: ['#1e1e1e'],
@@ -281,6 +282,9 @@ export class ThinkCodingBehavior
 			'',
 			'## User request',
 			this.state.query,
+			'',
+			'## Naming',
+			'If this project does not yet have a clear name (e.g. the request is a long or vague description rather than a concise product name), call the `set_title` tool once, early, with a short human-friendly title (Title Case, under ~60 characters). Skip it if a good title already exists; do not rename on every turn.',
 			'',
 			'## Clarify before building',
 			'If the request is underspecified or ambiguous (e.g. a one-line idea with no details on features, scope, data, or design), do NOT start writing files yet. Instead, on this turn:',
@@ -574,6 +578,8 @@ export class ThinkCodingBehavior
 				});
 				if (toolName === 'deploy_space') {
 					await this.handleDeploySpaceOutput(output);
+				} else if (toolName === 'set_title') {
+					await this.handleSetTitleOutput(args, output);
 				} else {
 					await this.maybeMirrorFile(toolName, args, seenWrittenFiles);
 				}
@@ -680,6 +686,56 @@ export class ThinkCodingBehavior
 		} catch (e) {
 			this.logger.warn('Failed to surface preview after deploy_space', e);
 		}
+	}
+
+	/**
+	 * The model named the project via the `set_title` tool. Pull the chosen
+	 * title from the tool output (falling back to its input), then persist it to
+	 * the app state + database via {@link setTitle}.
+	 */
+	private async handleSetTitleOutput(
+		args: Record<string, unknown>,
+		output: unknown,
+	): Promise<void> {
+		let title: string | undefined;
+		if (typeof output === 'string') {
+			try {
+				const parsed = JSON.parse(output) as Record<string, unknown>;
+				if (typeof parsed.title === 'string') title = parsed.title;
+			} catch {
+				// Non-JSON output — fall back to the tool input below.
+			}
+		} else if (output && typeof output === 'object') {
+			const parsed = output as Record<string, unknown>;
+			if (typeof parsed.title === 'string') title = parsed.title;
+		}
+		if (!title) title = pickStringField(args, 'title');
+		if (!title) return;
+		await this.setTitle(title);
+	}
+
+	/**
+	 * Update the project's short display title: sanitize, store it on the
+	 * blueprint (drives the preview header) and persist to the app record (drives
+	 * the app list). DB failures are logged, never thrown (AppService contract).
+	 */
+	async setTitle(title: string): Promise<void> {
+		const shortTitle = deriveShortTitle(title);
+		const updatedBlueprint = { ...this.state.blueprint, title: shortTitle };
+		this.setState({
+			...this.state,
+			blueprint: updatedBlueprint,
+		});
+		try {
+			await new AppService(this.env).updateApp(this.getAgentId(), { title: shortTitle });
+		} catch (error) {
+			this.logger.warn('Failed to persist project title', { title: shortTitle, error });
+		}
+		this.broadcast(WebSocketMessageResponses.BLUEPRINT_UPDATED, {
+			message: 'Project title updated',
+			updatedKeys: ['title'],
+			blueprint: updatedBlueprint,
+		});
 	}
 
 	private async deployCurrentBranch(): Promise<string | null> {

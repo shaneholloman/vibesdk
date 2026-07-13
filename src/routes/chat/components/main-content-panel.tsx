@@ -268,14 +268,19 @@ export function MainContentPanel(props: MainContentPanelProps) {
 		);
 
 		return renderViewWithHeader(
-			<div className="flex items-center gap-2">
-				<span className="text-sm font-mono text-text-50/70">
+			<div className="flex min-w-0 items-center gap-2">
+				<span
+					className="truncate text-sm font-mono text-text-50/70"
+					title={previewTitle}
+				>
 					{previewTitle}
 				</span>
-				<Copy text={previewUrl} />
+				<span className="shrink-0">
+					<Copy text={previewUrl} />
+				</span>
 				{showManualRefresh && (
 					<button
-						className="p-1 hover:bg-bg-2 rounded transition-colors"
+						className="shrink-0 p-1 hover:bg-bg-2 rounded transition-colors"
 						onClick={onManualRefresh}
 						title="Refresh preview"
 					>
